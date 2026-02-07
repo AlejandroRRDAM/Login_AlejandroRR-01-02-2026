@@ -21,12 +21,19 @@ namespace Login_AlejandroRR
     }
 
     // ====================================================
-    // CLASE 1: LOGIN
+    // CLASE 1: LOGIN (CON BLOQUEO DE INTENTOS)
     // ====================================================
     public partial class Form1 : Form
     {
         private TextBox txtUsuario, txtPass;
         private Label lblEstado;
+        private Button btnEntrar;
+
+        // VARIABLES PARA EL BLOQUEO
+        private int intentosFallidos = 0;
+        private int segundosRestantes = 0;
+        private System.Windows.Forms.Timer tmrBloqueo;
+
         // AJUSTA TU PUERTO SI ES NECESARIO (3306 estándar / 3307 XAMPP)
         private string connectionString = "Server=localhost;Port=3306;Database=LoginAlejandroDB;Uid=root;Pwd=;";
 
@@ -44,17 +51,25 @@ namespace Login_AlejandroRR
         private void ConfigurarFormularioManual()
         {
             this.Size = new Size(350, 480); this.StartPosition = FormStartPosition.CenterScreen; this.BackColor = cFondo; this.Text = "Login"; this.Controls.Clear();
+
+            tmrBloqueo = new System.Windows.Forms.Timer { Interval = 1000 };
+            tmrBloqueo.Tick += TmrBloqueo_Tick;
+
             Label lblT = new Label { Text = "Iniciar Sesión", Font = new Font("Segoe UI", 18, FontStyle.Bold), ForeColor = cTexto, Top = 30, Left = 90, AutoSize = true };
             Label l1 = new Label { Text = "Usuario:", Top = 90, Left = 50, ForeColor = Color.Gray };
             txtUsuario = new TextBox { Top = 115, Left = 50, Width = 230, BackColor = cInput, ForeColor = cTexto, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Segoe UI", 11) };
             Label l2 = new Label { Text = "Contraseña:", Top = 160, Left = 50, ForeColor = Color.Gray };
             txtPass = new TextBox { Top = 185, Left = 50, Width = 230, BackColor = cInput, ForeColor = cTexto, BorderStyle = BorderStyle.FixedSingle, PasswordChar = '●', Font = new Font("Segoe UI", 11) };
-            Button btn = new Button { Text = "ENTRAR", Top = 240, Left = 50, Width = 230, Height = 45, BackColor = Color.SteelBlue, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
-            btn.FlatAppearance.BorderSize = 0; btn.Click += Login_Click;
+
+            btnEntrar = new Button { Text = "ENTRAR", Top = 240, Left = 50, Width = 230, Height = 45, BackColor = Color.SteelBlue, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            btnEntrar.FlatAppearance.BorderSize = 0; btnEntrar.Click += Login_Click;
+
             Button btnReg = new Button { Text = "Crear Cuenta", Top = 300, Left = 50, Width = 230, Height = 35, BackColor = cInput, ForeColor = cTexto, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
             btnReg.FlatAppearance.BorderSize = 0; btnReg.Click += (s, e) => new FormRegistro(connectionString).ShowDialog();
+
             lblEstado = new Label { Top = 350, Left = 20, Width = 300, ForeColor = Color.IndianRed, TextAlign = ContentAlignment.MiddleCenter };
-            this.Controls.Add(lblT); this.Controls.Add(l1); this.Controls.Add(txtUsuario); this.Controls.Add(l2); this.Controls.Add(txtPass); this.Controls.Add(btn); this.Controls.Add(btnReg); this.Controls.Add(lblEstado);
+
+            this.Controls.Add(lblT); this.Controls.Add(l1); this.Controls.Add(txtUsuario); this.Controls.Add(l2); this.Controls.Add(txtPass); this.Controls.Add(btnEntrar); this.Controls.Add(btnReg); this.Controls.Add(lblEstado);
         }
 
         private void Login_Click(object sender, EventArgs e)
@@ -73,21 +88,94 @@ namespace Login_AlejandroRR
                             if (r.GetString("password") == txtPass.Text)
                             {
                                 if (r.GetBoolean("banned")) { MessageBox.Show("Baneado"); return; }
+                                intentosFallidos = 0; lblEstado.Text = "";
                                 this.Hide(); new FormHome(txtUsuario.Text, r.GetInt32("id"), r.GetBoolean("es_admin"), connectionString).ShowDialog(); this.Show(); txtPass.Text = "";
                             }
-                            else lblEstado.Text = "Pass incorrecta";
+                            else RegistrarFallo("Contraseña incorrecta");
                         }
-                        else lblEstado.Text = "Usuario no existe";
+                        else RegistrarFallo("Usuario no existe");
                     }
                 }
             }
             catch (Exception ex) { MessageBox.Show("Error conexión: " + ex.Message); }
         }
+
+        private void RegistrarFallo(string msg)
+        {
+            intentosFallidos++;
+            if (intentosFallidos >= 3)
+            {
+                btnEntrar.Enabled = false; btnEntrar.BackColor = Color.Gray; segundosRestantes = 10;
+                lblEstado.Text = $"Bloqueado. Espera {segundosRestantes}s..."; tmrBloqueo.Start();
+            }
+            else lblEstado.Text = $"{msg}. Intento {intentosFallidos}/3";
+        }
+
+        private void TmrBloqueo_Tick(object sender, EventArgs e)
+        {
+            segundosRestantes--; lblEstado.Text = $"Bloqueado. Espera {segundosRestantes}s...";
+            if (segundosRestantes <= 0) { tmrBloqueo.Stop(); btnEntrar.Enabled = true; btnEntrar.BackColor = Color.SteelBlue; intentosFallidos = 0; lblEstado.Text = ""; }
+        }
     }
 
+    // ====================================================
+    // CLASE 2: REGISTRO (DISEÑO ARREGLADO)
+    // ====================================================
     public class FormRegistro : Form
     {
-        public FormRegistro(string c) { this.Size = new Size(300, 250); BackColor = Color.FromArgb(18, 18, 18); StartPosition = FormStartPosition.CenterParent; TextBox tU = new TextBox { Top = 45, Left = 20, Width = 240 }, tP = new TextBox { Top = 90, Left = 20, Width = 240 }; Button b = new Button { Text = "Guardar", Top = 140, Left = 20, BackColor = Color.SeaGreen }; b.Click += (s, e) => { using (var k = new MySqlConnection(c)) { k.Open(); new MySqlCommand($"INSERT INTO Usuarios(nombre_usuario,password) VALUES('{tU.Text}','{tP.Text}')", k).ExecuteNonQuery(); } Close(); }; Controls.Add(new Label { Text = "Usuario", Top = 20, Left = 20, ForeColor = Color.White }); Controls.Add(tU); Controls.Add(new Label { Text = "Pass", Top = 70, Left = 20, ForeColor = Color.White }); Controls.Add(tP); Controls.Add(b); }
+        public FormRegistro(string c)
+        {
+            // 1. Diseño de la ventana
+            this.Size = new Size(350, 350); // Un poco más grande para que respire
+            this.BackColor = Color.FromArgb(18, 18, 18);
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.Text = "Nuevo Usuario";
+            this.FormBorderStyle = FormBorderStyle.FixedToolWindow;
+
+            // Colores
+            Color cInput = Color.FromArgb(32, 32, 32);
+            Color cTexto = Color.FromArgb(240, 240, 240);
+            Font fuente = new Font("Segoe UI", 11);
+
+            // 2. Controles Estilizados (Sin bordes blancos feos)
+            Label l1 = new Label { Text = "Usuario:", Top = 30, Left = 40, ForeColor = Color.Gray, AutoSize = true, Font = fuente };
+            TextBox tU = new TextBox { Top = 60, Left = 40, Width = 250, BackColor = cInput, ForeColor = cTexto, BorderStyle = BorderStyle.FixedSingle, Font = fuente };
+
+            Label l2 = new Label { Text = "Contraseña:", Top = 110, Left = 40, ForeColor = Color.Gray, AutoSize = true, Font = fuente };
+            TextBox tP = new TextBox { Top = 140, Left = 40, Width = 250, BackColor = cInput, ForeColor = cTexto, BorderStyle = BorderStyle.FixedSingle, Font = fuente }; // PasswordChar opcional si quieres verla o no
+
+            // 3. Botón Azul y Plano (Sin bordes)
+            Button b = new Button
+            {
+                Text = "GUARDAR",
+                Top = 210,
+                Left = 40,
+                Width = 250,
+                Height = 45,
+                BackColor = Color.SteelBlue,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            };
+            b.FlatAppearance.BorderSize = 0; // Quita el borde de línea
+
+            b.Click += (s, e) => {
+                if (string.IsNullOrWhiteSpace(tU.Text) || string.IsNullOrWhiteSpace(tP.Text)) { MessageBox.Show("Rellena todo"); return; }
+                try
+                {
+                    using (var k = new MySqlConnection(c))
+                    {
+                        k.Open();
+                        new MySqlCommand($"INSERT INTO Usuarios(nombre_usuario,password) VALUES('{tU.Text}','{tP.Text}')", k).ExecuteNonQuery();
+                    }
+                    MessageBox.Show("¡Cuenta creada!"); Close();
+                }
+                catch (Exception ex) { MessageBox.Show("Error: " + ex.Message); }
+            };
+
+            Controls.Add(l1); Controls.Add(tU); Controls.Add(l2); Controls.Add(tP); Controls.Add(b);
+        }
     }
 
     // ====================================================
@@ -131,23 +219,11 @@ namespace Login_AlejandroRR
 
             pnlSidebar = new Panel { Dock = DockStyle.Left, Width = 0, BackColor = Color.FromArgb(28, 28, 28) }; this.Controls.Add(pnlSidebar);
 
-            // --- LOGO NINTENDO (AGRANDADO) ---
-            PictureBox pbLogo = new PictureBox();
-            // ANTES: Size(180, 70) -> AHORA: Size(200, 100) (Más ancho y alto)
-            pbLogo.Size = new Size(200, 100);
-            // ANTES: Point(20, 20) -> AHORA: Point(10, 10) (Más centrado)
-            pbLogo.Location = new Point(10, 10);
-            pbLogo.SizeMode = PictureBoxSizeMode.Zoom; // Mantiene proporción sin estirar
-            try
-            {
-                string rutaLogo = Path.Combine(Application.StartupPath, "Imagenes", "Nintendo.png");
-                if (File.Exists(rutaLogo)) pbLogo.Image = Image.FromFile(rutaLogo);
-            }
-            catch { }
+            // LOGO NINTENDO
+            PictureBox pbLogo = new PictureBox(); pbLogo.Size = new Size(200, 100); pbLogo.Location = new Point(10, 10); pbLogo.SizeMode = PictureBoxSizeMode.Zoom;
+            try { string rutaLogo = Path.Combine(Application.StartupPath, "Imagenes", "Nintendo.png"); if (File.Exists(rutaLogo)) pbLogo.Image = Image.FromFile(rutaLogo); } catch { }
             pnlSidebar.Controls.Add(pbLogo);
 
-            // IMPORTANTE: Bajamos los botones para que no toquen el logo gigante
-            // ANTES: y = 120 -> AHORA: y = 140
             int y = 140;
             CrearBtnMenu("TIENDA", y, (s, e) => { viendoBiblioteca = false; CargarJuegos(); });
             CrearBtnMenu("MIS JUEGOS", y += 60, (s, e) => { viendoBiblioteca = true; CargarJuegos(); });
@@ -416,10 +492,10 @@ namespace Login_AlejandroRR
                                 }
                                 MessageBox.Show("¡Juego añadido a tu biblioteca!"); this.Close();
                             }
-                            catch (MySqlException ex)
+                            catch (Exception ex)
                             {
-                                if (ex.Number == 1062) MessageBox.Show("Ya tienes este juego.");
-                                else MessageBox.Show("Error: " + ex.Message);
+                                if (ex.Message.Contains("Duplicate") || ex.Message.Contains("key")) MessageBox.Show("Ya tienes este juego.");
+                                else MessageBox.Show("Error compra: " + ex.Message);
                             }
                         };
                         Button btnCart = new Button { Text = "AÑADIR AL CARRO", Left = 410, Top = 330, Width = 140, Height = 40, BackColor = Color.DarkGoldenrod, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
@@ -449,8 +525,9 @@ namespace Login_AlejandroRR
             dgv.DefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(50, 50, 50), ForeColor = Color.White, SelectionBackColor = Color.SteelBlue };
             dgv.EnableHeadersVisualStyles = false;
 
+            // Columnas manuales para mejor control
             dgv.Columns.Add("id", "ID"); dgv.Columns["id"].Visible = false;
-            dgv.Columns.Add("titulo", "Juego"); dgv.Columns["titulo"].Width = 200;
+            dgv.Columns.Add("titulo", "Juego"); dgv.Columns["titulo"].Width = 250;
             dgv.Columns.Add("precio", "Precio");
 
             DataGridViewButtonColumn btnCol = new DataGridViewButtonColumn();
